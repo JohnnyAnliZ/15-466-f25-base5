@@ -2,6 +2,8 @@
 
 #include "Connection.hpp"
 #include "Game.hpp"
+#include "Scene.hpp"
+#include "Sound.hpp"
 
 #include <glm/glm.hpp>
 
@@ -17,10 +19,27 @@ struct PlayMode : Mode {
 	virtual void update(float elapsed) override;
 	virtual void draw(glm::uvec2 const &drawable_size) override;
 
+
+	//----- scene -----
+	Scene scene;
+
+	Scene::Transform* head;
+	Scene::Transform* torso;
+	Scene::Transform* arms;
+	Scene::Transform* foot;
+
+	//camera:
+	Scene::Camera* camera = nullptr;
+
 	//----- game state -----
 
 	//input tracking for local player:
 	Player::Controls controls;
+
+	//which foot
+	bool rightFoot = true;
+
+
 
 	//latest game state (from server):
 	Game game;

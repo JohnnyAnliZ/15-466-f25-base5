@@ -15,6 +15,7 @@ struct Connection;
 enum class Message : uint8_t {
 	C2S_Controls = 1, //Greg!
 	S2C_State = 's',
+	C2S_Vec3 = 'p',
 	//...
 };
 
@@ -36,13 +37,27 @@ struct Player {
 		//returns 'true' if read a controls message,
 		//throws on malformed controls message
 		bool recv_controls_message(Connection *connection);
+		
 	} controls;
+	bool recv_vec3_message(Connection* connection_);
 
 	//player state (sent from server):
-	glm::vec2 position = glm::vec2(0.0f, 0.0f);
-	glm::vec2 velocity = glm::vec2(0.0f, 0.0f);
+	glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f);
+	float roll = 0;//deg
+	float yaw = 0;//deg
+	bool rightFoot = true;
 
-	glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f);
+	//other player states just to track animation
+	bool lifting = false;
+	bool falling = false;
+
+	//constants for transforms
+	float TTFOZ = 1.9515f;//Z offset of the foot to the center of the torso
+	float TTFOXY = 1.2794f;//offset on the XY axis
+	float liftRate = 30.0f;
+	float fallRate = 2 * liftRate;
+	float yawRate = 15.0f;
+
 	std::string name = "";
 };
 
@@ -50,7 +65,7 @@ struct Game {
 	std::list< Player > players; //(using list so they can have stable addresses)
 	Player *spawn_player(); //add player the end of the players list (may also, e.g., play some spawn anim)
 	void remove_player(Player *); //remove player from game (may also, e.g., play some despawn anim)
-
+	 
 	std::mt19937 mt; //used for spawning players
 	uint32_t next_player_number = 1; //used for naming players
 
