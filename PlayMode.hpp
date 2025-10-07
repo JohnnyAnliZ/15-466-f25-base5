@@ -9,6 +9,7 @@
 
 #include <vector>
 #include <deque>
+#include <unordered_map>
 
 struct PlayMode : Mode {
 	PlayMode(Client &client);
@@ -23,15 +24,29 @@ struct PlayMode : Mode {
 	//----- scene -----
 	Scene scene;
 
-	Scene::Transform* head;
-	Scene::Transform* torso;
-	Scene::Transform* arms;
-	Scene::Transform* foot;
+	
 
 	//camera:
 	Scene::Camera* camera = nullptr;
 
 	//----- game state -----
+
+	//the transforms to controll using the game state sent from the server
+	Scene::Transform* head;
+	Scene::Transform* torso;
+	Scene::Transform* arms;
+	Scene::Transform* foot;
+
+	struct Opponent{
+		Scene::Transform* head;
+		Scene::Transform* torso;
+		Scene::Transform* arms;
+		Scene::Transform* foot;
+	};
+
+	std::unordered_map<uint32_t, Opponent> opponents;
+
+	std::unordered_map<uint32_t, bool> rightFeet;
 
 	//input tracking for local player:
 	Player::Controls controls;
@@ -39,7 +54,8 @@ struct PlayMode : Mode {
 	//which foot
 	bool rightFoot = true;
 
-
+	//track player numbers
+	size_t players = 0;
 
 	//latest game state (from server):
 	Game game;

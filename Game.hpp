@@ -5,7 +5,7 @@
 #include <string>
 #include <list>
 #include <random>
-
+#include "scene.hpp"
 struct Connection;
 
 //Game state, separate from rendering.
@@ -16,6 +16,7 @@ enum class Message : uint8_t {
 	C2S_Controls = 1, //Greg!
 	S2C_State = 's',
 	C2S_Vec3 = 'p',
+	C2S_TAddr = 'a',
 	//...
 };
 
@@ -41,11 +42,18 @@ struct Player {
 	} controls;
 	bool recv_vec3_message(Connection* connection_);
 
+
 	//player state (sent from server):
 	glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f);
 	float roll = 0;//deg
 	float yaw = 0;//deg
 	bool rightFoot = true;
+
+	//temporary storage
+	Scene::Transform* head;
+	Scene::Transform* torso;
+	Scene::Transform* arms;
+	Scene::Transform* foot;
 
 	//other player states just to track animation
 	bool lifting = false;
@@ -56,8 +64,10 @@ struct Player {
 	float TTFOXY = 1.2794f;//offset on the XY axis
 	float liftRate = 30.0f;
 	float fallRate = 2 * liftRate;
-	float yawRate = 15.0f;
+	float yawRate = 30.0f;
 
+	//id into the local storage of players' transforms
+	uint32_t id = 0;
 	std::string name = "";
 };
 

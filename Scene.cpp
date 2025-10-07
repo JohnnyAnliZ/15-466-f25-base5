@@ -271,6 +271,7 @@ void Scene::load(std::string const &filename,
 			std::cout << "Ignoring non-perspective camera (" + std::string(c.type, 4) + ") stored in file." << std::endl;
 			continue;
 		}
+		std::cout << "here's a camera" << hierarchy_transforms[c.transform]->position.y<<std::endl;
 		cameras.emplace_back(hierarchy_transforms[c.transform]);
 		Camera *camera = &cameras.back();
 		camera->fovy = c.data / 180.0f * 3.1415926f; //FOV is stored in degrees; convert to radians.
