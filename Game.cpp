@@ -225,7 +225,7 @@ void Game::update(float elapsed) {
 
 		}
 		
-		if (p.controls.down.pressed) {
+		if (p.controls.down.pressed && (p.lifting || p.falling)) {
 			if (p.rightFoot) {
 				p.yaw += p.yawRate * elapsed;
 			}
@@ -233,7 +233,7 @@ void Game::update(float elapsed) {
 				p.yaw -= p.yawRate * elapsed;
 			}
 		}
-		if (p.controls.up.pressed) {
+		if (p.controls.up.pressed && (p.lifting || p.falling)) {
 			if (p.rightFoot) {
 				p.yaw -= p.yawRate * elapsed;
 			}
