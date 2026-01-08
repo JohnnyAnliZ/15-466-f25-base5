@@ -4,6 +4,8 @@
 #include "read_write_chunk.hpp"
 
 #include <glm/gtc/type_ptr.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/string_cast.hpp>
 
 #include <fstream>
 
@@ -102,7 +104,7 @@ void Scene::draw(glm::mat4 const &clip_from_world, glm::mat4x3 const &light_from
 		if (pipeline.count == 0) continue;
 
 
-		//Set shader program:
+		//Set shader program:wd
 		glUseProgram(pipeline.program);
 
 		//Set attribute sources:
@@ -112,7 +114,24 @@ void Scene::draw(glm::mat4 const &clip_from_world, glm::mat4x3 const &light_from
 
 		//the object-to-world matrix is used in all three of these uniforms:
 		assert(drawable.transform); //drawables *must* have a transform
+		
 		glm::mat4x3 world_from_object = drawable.transform->make_world_from_local();
+		// Debug output:
+		if (drawable.transform->name == "Room.016" || drawable.transform->name == "FootM") {
+			std::cout << "Drawing: " << drawable.transform->name << std::endl;
+			std::cout << "  Transform address: " << drawable.transform << std::endl;
+			std::cout << "  Transform position: " << glm::to_string(drawable.transform->position) << std::endl;
+			std::cout << "  Transform rotation: " << glm::to_string(drawable.transform->rotation) << std::endl;
+			std::cout << "  Parent: " << drawable.transform->parent << std::endl;
+			std::cout << "  World matrix column 3 (translation): " << glm::to_string(glm::vec3(world_from_object[3])) << std::endl;
+			std::cout << "  VAO: " << pipeline.vao << std::endl;
+			std::cout<< "  Program: " << pipeline.program << std::endl;
+			std::cout << "  Mesh start: " << pipeline.start << std::endl;
+			std::cout << "  Mesh count: " << pipeline.count << std::endl;
+			std::cout << std::endl;
+		}
+
+
 
 		//CLIP_FROM_OBJECT takes vertices from object space to clip space:
 		if (pipeline.CLIP_FROM_OBJECT_mat4 != -1U) {
@@ -123,7 +142,7 @@ void Scene::draw(glm::mat4 const &clip_from_world, glm::mat4x3 const &light_from
 		//the object-to-light matrix is used in the next two uniforms:
 		glm::mat4x3 light_from_object = light_from_world * glm::mat4(world_from_object);
 
-		//CLIP_FROM_OBJECT takes vertices from object space to light space:
+		//LIGHT_FROM_OBJECT takes vertices from object space to light space:
 		if (pipeline.LIGHT_FROM_OBJECT_mat4x3 != -1U) {
 			glUniformMatrix4x3fv(pipeline.LIGHT_FROM_OBJECT_mat4x3, 1, GL_FALSE, glm::value_ptr(light_from_object));
 		}

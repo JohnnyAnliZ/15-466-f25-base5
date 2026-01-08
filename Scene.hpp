@@ -69,7 +69,11 @@ struct Scene {
 			GLuint CLIP_FROM_OBJECT_mat4 = -1U; //uniform location for object to clip space matrix
 			GLuint LIGHT_FROM_OBJECT_mat4x3 = -1U; //uniform location for object to light space (== world space) matrix
 			GLuint LIGHT_FROM_NORMAL_mat3 = -1U; //uniform location for normal to light space (== world space) matrix
-
+			GLuint LIGHT_TYPE_int = -1U;
+			GLuint LIGHT_LOCATION_vec3 = -1U;
+			GLuint LIGHT_DIRECTION_vec3 = -1U;
+			GLuint LIGHT_ENERGY_vec3 = -1U;
+			GLuint LIGHT_CUTOFF_float = -1U;
 			std::function< void() > set_uniforms; //(optional) function to set any other useful uniforms
 
 			//texture objects to bind for the first TextureCount textures:

@@ -76,25 +76,25 @@ int main(int argc, char **argv) {
 
 				} else if (evt == Connection::OnClose) {
 					//client disconnected:
-
+					
 					remove_connection(c);
 
 				} else { assert(evt == Connection::OnRecv);
 					//got data from client:
 					//std::cout << "current buffer:\n" << hex_dump(c->recv_buffer); std::cout.flush(); //DEBUG
-
+					
 					//look up in players list:
 					auto f = connection_to_player.find(c);
 					assert(f != connection_to_player.end());
 					Player &player = *f->second;
-
 					//handle messages from client:
 					try {
 						bool handled_message;
+						
 						do {
 							handled_message = false;
-							if (player.controls.recv_controls_message(c) && 
-								player.recv_vec3_message(c)) handled_message = true;
+							if (player.controls.recv_controls_message(c)) handled_message = true;
+							if(player.recv_vec3_message(c)) handled_message = true;
 
 							//TODO: extend for more message types as needed
 						} while (handled_message);

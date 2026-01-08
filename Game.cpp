@@ -42,9 +42,20 @@ bool Player::Controls::recv_controls_message(Connection *connection_) {
 
 	auto &recv_buffer = connection.recv_buffer;
 
-	//expecting [type, size_low0, size_mid8, size_high8]:
-	if (recv_buffer.size() < 4) return false;
-	if (recv_buffer[0] != uint8_t(Message::C2S_Controls)) return false;
+	if (recv_buffer.size() > 200) {
+		std::cerr << "Buffer overflow, clearing" << std::endl;
+		recv_buffer.clear();
+	}
+	//expecting [type, size_low8, size_mid8, size_high8]:
+	if (recv_buffer.size() < 4) {
+		//std::cout<<"toosmall\n";
+		return false;
+	}
+	if (recv_buffer[0] != uint8_t(Message::C2S_Controls)) {
+		std::cout<<recv_buffer.size()<< " "<< recv_buffer[0]<<" is not controls\n";
+		return false;
+	}
+
 	uint32_t size = (uint32_t(recv_buffer[3]) << 16)
 	              | (uint32_t(recv_buffer[2]) << 8)
 	              |  uint32_t(recv_buffer[1]);
@@ -53,7 +64,7 @@ bool Player::Controls::recv_controls_message(Connection *connection_) {
 	//expecting complete message:
 	if (recv_buffer.size() < 4 + size) return false;
 
-	std::cout << "reading buttons" << std::endl;
+
 	auto recv_button = [](uint8_t byte, Button *button) {
 		button->pressed = (byte & 0x80);
 		uint32_t d = uint32_t(button->downs) + uint32_t(byte & 0x7f);
@@ -85,16 +96,18 @@ bool Player::recv_vec3_message(Connection* connection_) {
 
 	auto& recv_buffer = connection.recv_buffer;
 
+	if (recv_buffer.size() < 1) {
+		return false;
+	}
 
 	if (recv_buffer[0] != uint8_t(Message::C2S_Vec3)) return false;
 
 	//expecting complete vec3:
 	if (recv_buffer.size() !=17) {
-		std::cout<< "Controls message with size " + std::to_string(recv_buffer.size()) + " != 17!";
+		std::cout<< "Vec3 message with size " + std::to_string(recv_buffer.size()) + " != 17!";
 		return false;
 	}
 
-	std::cout << "reading vec3" << std::endl;
 	uint32_t at = 0;
 	auto read = [&](auto* val) {
 		if (1+at+sizeof(*val) > recv_buffer.size()) {
@@ -106,8 +119,8 @@ bool Player::recv_vec3_message(Connection* connection_) {
 		};
 
 	read(&position);
-	read(&id);
-	//delete message from buffer:
+	//read(&id);
+
 	recv_buffer.erase(recv_buffer.begin(), recv_buffer.begin() + 17);
 
 	return true;
@@ -142,8 +155,10 @@ void Game::remove_player(Player *player) {
 	bool found = false;
 	for (auto pi = players.begin(); pi != players.end(); ++pi) {
 		if (&*pi == player) {
+			std::cout << "removed playa: " << player->name <<" 	next player number" << next_player_number << std::endl;
 			players.erase(pi);
 			found = true;
+			
 			break;
 		}
 	}
@@ -156,91 +171,99 @@ void Game::update(float elapsed) {
 
 
 
-		std::cout << "lifting:" << p.lifting << "falling" << p.falling<<std::endl;
+		//std::cout << "lifting:" << p.lifting << "falling" << p.falling<<std::endl;
 
+		//equations of motion for a falling rod pivoted at one end:
+		const float g = 30.0f;
+		const float L = 1.0f;  // rod length
+		
 		if (!p.lifting && p.falling) {
+			// Angular acceleration from physics
+			float sign = p.rightFoot ? 1.0f : -1.0f;
+    		float angularAcc = -(3.0f * g / (2.0f * L)) * cos(glm::radians(p.roll)) * sign;
+			//std::cout<< "angularAcc: " << angularAcc << "cos roll: " << cos(glm::radians(p.roll)) << "roll: " << p.roll << std::endl;
+			// Integrate
+			p.roll += (p.angularVel + angularAcc * elapsed) * elapsed;
+			p.angularVel += angularAcc * elapsed;
 
-			if (p.rightFoot) {
-				//decrease roll till <0 degree
-				p.roll -= elapsed * p.fallRate;
-				if (p.roll < 0) {
-					p.roll = 0;
-					p.falling = false;
-				}
-			}
-			else {
-				//increase roll till >0 degree
-				p.roll += elapsed * p.fallRate;
-				if (p.roll > 0) {
-					p.roll = 0;
-					p.falling = false;
-				}
+			// Stop when upright
+			if ((p.rightFoot && p.roll <= 0.0f) ||
+				(!p.rightFoot && p.roll >= 0.0f))
+			{
+				p.roll = 0.0f;
+				p.angularVel = 0.0f;
+				p.falling = false;
 			}
 
 		}	
-
-		if (p.controls.left.pressed && !p.controls.right.pressed) {
-			//if player is not doing anything make right foot the anchor
-			if (!p.lifting && !p.falling) {
-				p.rightFoot = false;
-				p.lifting = true;
-			}else if (p.lifting && !p.falling) {
-				//increment the footAxis roll value till 45 degree
-				if (p.rightFoot) {
-					p.lifting = false;
-					p.falling = true;
-				}
-				p.roll -= elapsed * p.liftRate;
-				if (p.roll < -45.0f){
-					p.lifting = false;
-					p.falling = true;
-				}
-			}
-		}
-		if (p.controls.right.pressed && !p.controls.left.pressed) {
-			if (!p.lifting && !p.falling) {
-				p.rightFoot = true;
-				p.lifting = true;
-			}
-			else if (p.lifting && !p.falling) {
-				//increment the footAxis roll value till 45 degree
-				if (!p.rightFoot) {
-					p.lifting = false;
-					p.falling = true;
-				}
-				p.roll += elapsed * p.liftRate;
-				if (p.roll > 45.0f) {
-					p.lifting = false;
-					p.falling = true;
-				}
-			}
-		}
-
-		// if idle 
-		if (p.controls.right.pressed == p.controls.left.pressed) {
-			if (p.lifting && !p.falling) {
-				p.lifting = false;
-				p.falling = true;
-			}
-
-		}
 		
-		if (p.controls.down.pressed && (p.lifting || p.falling)) {
-			if (p.rightFoot) {
-				p.yaw += p.yawRate * elapsed;
+		{//when the either left or right button is pressed
+			if (p.controls.left.pressed && !p.controls.right.pressed) {
+				//if player is not doing anything make right foot the anchor
+				if (!p.lifting && !p.falling) {
+					p.rightFoot = false;
+					p.lifting = true;
+				}else if (p.lifting && !p.falling) {
+					//increment the footAxis roll value till 45 degree
+					if (p.rightFoot) {
+						p.lifting = false;
+						p.falling = true;
+					}
+					p.roll -= elapsed * p.liftRate;
+					if (p.roll < -45.0f){
+						p.lifting = false;
+						p.falling = true;
+					}
+				}
 			}
-			else {
-				p.yaw -= p.yawRate * elapsed;
+			if (p.controls.right.pressed && !p.controls.left.pressed) {
+				if (!p.lifting && !p.falling) {
+					p.rightFoot = true;
+					p.lifting = true;
+				}
+				else if (p.lifting && !p.falling) {
+					//increment the footAxis roll value till 45 degree
+					if (!p.rightFoot) {
+						p.lifting = false;
+						p.falling = true;
+					}
+					p.roll += elapsed * p.liftRate;
+					if (p.roll > 45.0f) {
+						p.lifting = false;
+						p.falling = true;
+					}
+				}
 			}
 		}
-		if (p.controls.up.pressed && (p.lifting || p.falling)) {
-			if (p.rightFoot) {
-				p.yaw -= p.yawRate * elapsed;
+
+
+		{// if idle 
+			if (p.controls.right.pressed == p.controls.left.pressed) {
+				if (p.lifting && !p.falling) {
+					p.lifting = false;
+					p.falling = true;
+				}
 			}
-			else {
-				p.yaw += p.yawRate * elapsed;
+			if (p.controls.down.pressed && (p.lifting || p.falling)) {
+				if (p.rightFoot) {
+					p.yaw += p.yawRate * elapsed;
+				}
+				else {
+					p.yaw -= p.yawRate * elapsed;
+				}
 			}
+			if (p.controls.up.pressed && (p.lifting || p.falling)) {
+				if (p.rightFoot) {
+					p.yaw -= p.yawRate * elapsed;
+				}
+				else {
+					p.yaw += p.yawRate * elapsed;
+				}
+			}
+		
 		}
+
+		
 
 		
 

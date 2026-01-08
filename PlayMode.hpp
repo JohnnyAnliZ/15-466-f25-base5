@@ -32,16 +32,16 @@ struct PlayMode : Mode {
 	//----- game state -----
 
 	//the transforms to controll using the game state sent from the server
-	Scene::Transform* head;
-	Scene::Transform* torso;
-	Scene::Transform* arms;
-	Scene::Transform* foot;
+	Scene::Transform* head= nullptr;
+	Scene::Transform* torso	= nullptr;
+	Scene::Transform* arms= nullptr;
+	Scene::Transform* foot= nullptr;
 
 	struct Opponent{
-		Scene::Transform* head;
-		Scene::Transform* torso;
-		Scene::Transform* arms;
-		Scene::Transform* foot;
+		Scene::Transform* head	= nullptr;
+		Scene::Transform* torso	= nullptr;
+		Scene::Transform* arms	= nullptr;
+		Scene::Transform* foot	= nullptr;
 	};
 
 	std::unordered_map<uint32_t, Opponent> opponents;

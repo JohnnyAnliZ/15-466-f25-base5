@@ -45,6 +45,8 @@ struct Player {
 
 	//player state (sent from server):
 	glm::vec3 position = glm::vec3(0.0f, 0.0f, 0.0f);
+
+	float angularVel = 0;// dθ/dt for calculating falling motion
 	float roll = 0;//deg
 	float yaw = 0;//deg
 	bool rightFoot = true;
