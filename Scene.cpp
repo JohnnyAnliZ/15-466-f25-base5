@@ -1,4 +1,8 @@
 #include "Scene.hpp"
+#include "CubemapProgram.hpp"
+#include "DirectLightInjectProgram.hpp"
+#include "ColorTextureProgram.hpp"
+
 
 #include "gl_errors.hpp"
 #include "read_write_chunk.hpp"
@@ -82,12 +86,241 @@ glm::mat4 Scene::Camera::make_projection() const {
 //-------------------------
 
 
+//render every texel a point light could see to a cubemap
+void Scene::renderToCubemap(Cubemap const &cubemap, Scene::Camera const &camera,Light const& light){
+	GLint prev_viewport[4];
+	glGetIntegerv(GL_VIEWPORT,prev_viewport);
+	//create framebuffer 
+	GLuint fbo;
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	// ensure color attachment is the draw buffer for this FBO
+	{
+		GLenum draw_buffers[1] = { GL_COLOR_ATTACHMENT0 };
+		glDrawBuffers(1, draw_buffers);
+	}
+
+	//render the scene throguh all 6 faces
+	for(uint32_t i = 0; i < 6; i++){
+		//attach the cubemap face to framebuffer
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+		GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, cubemap.tex, 0);
+		glViewport(0,0,cubemap.width,cubemap.width);
+		// ensure FBO is complete
+		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+		if (status != GL_FRAMEBUFFER_COMPLETE) {
+			throw std::runtime_error("Framebuffer incomplete when creating lightmap (status=" + std::to_string(status) + ")");
+		}
+		// Clear to black (no light)
+		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		//depth test to only get texture coordinates the light could see
+		glEnable(GL_DEPTH_TEST);
+		glDepthFunc(GL_LESS);
+		glClearDepth(1.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		//draw to each face using the pipeline
+		Scene::Drawable::Pipeline &pipeline = cubemap_pipeline;
+		glUseProgram(pipeline.program);
+		glm::mat4 projection = glm::infinitePerspective(glm::radians(90.0f), 1.0f, 0.01f);
+		
+		glm::mat4 views[6] = {
+			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 1, 0, 0), glm::vec3(0,-1, 0)),
+			glm::lookAt(light.transform->position, light.transform->position + glm::vec3(-1, 0, 0), glm::vec3(0,-1, 0)),
+			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 1, 0), glm::vec3(0, 0, 1)),
+			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0,-1, 0), glm::vec3(0, 0,-1)),
+			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 0, 1), glm::vec3(0,-1, 0)),
+			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 0,-1), glm::vec3(0,-1, 0)),
+		};
+		for(auto const & drawable: drawables){
+			glm::mat4x3 world_from_object = drawable.transform->make_world_from_local();
+			glm::mat4 clip_from_world = projection * views[i];
+			glm::mat4 clip_from_object = clip_from_world * glm::mat4(world_from_object);
+			glUniformMatrix4fv(pipeline.CLIP_FROM_OBJECT_mat4, 1, GL_FALSE, glm::value_ptr(clip_from_object));
+			glBindVertexArray(drawable.pipeline.vao);
+            glDrawArrays(GL_TRIANGLES, drawable.pipeline.start, drawable.pipeline.count);
+			GL_ERRORS();
+		}
+	}
+}
+
+//new inject direct lighting function that injects cubemap contents using the CPU instead of shaders
+void Scene::injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &lightmap, Light const &light){
+	//declare vector to store cubemap
+	struct UV{
+		float u = 0.0f;
+		float v = 0.0f;
+	};
+	uint32_t cubemap_width = cubemap.width;
+	uint32_t cubemap_face_size = cubemap_width * cubemap_width; 
+	uint32_t cubemap_size = cubemap_face_size * 6; 
+	std::vector<UV> cubemap_uvs; 
+	cubemap_uvs.reserve(cubemap_size);
+	// //declare vector to store lightmap initialized to black
+	std::vector<glm::vec4> lightmap_colors(lightmap.width * lightmap.height, glm::vec4(0.0f,0.0f,0.0f,1.0f));
+
+	for(uint32_t i = 0; i < 6; i ++){
+		glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap.tex);
+		glGetTexImage(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RG, GL_FLOAT, cubemap_uvs.data() + i * cubemap_width * cubemap_width);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+	}
+	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+	//write to the lightmap
+	for(uint32_t j = 0; j < cubemap_size; j++){
+		UV cur_uv = cubemap_uvs[j];
+		if (cur_uv.u == 0.0f && cur_uv.v == 0.0f) continue;
+		
+		//calculate using rasmus's equation
+		//this coordinate only keeps track of where in a cube face a pixel is in, doesn't map to each face
+		uint32_t x_texel = (j % cubemap_face_size) % cubemap_width;
+		uint32_t y_texel = (j % cubemap_face_size) / cubemap_width;
+		glm::vec2 cubemap_coordinate;
+		cubemap_coordinate.x = (x_texel + 0.5f) / cubemap_width * 2.0f - 1.0f;  // -1 to 1
+		cubemap_coordinate.y = (y_texel + 0.5f) / cubemap_width * 2.0f - 1.0f;  // -1 to 1_width, 1);
+		float denominator = std::pow(std::pow(cubemap_coordinate.x,2) + std::pow(cubemap_coordinate.y, 2) + 1, 1.5f);
+		glm::vec4 lightOutput = glm::vec4(light.energy * 24.0f / (cubemap_size * denominator), 1.0);//rasmus's equation
+		uint32_t x = std::floor(cur_uv.u * lightmap.width);
+		uint32_t y = std::floor(cur_uv.v * lightmap.height);
+		lightmap_colors[y * lightmap.width + x] += lightOutput;
+	}
+	//write to the lightmap texture
+	glBindTexture(GL_TEXTURE_2D, lightmap.tex);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, lightmap.width, lightmap.height, GL_RGBA, GL_FLOAT, lightmap_colors.data());
+	glBindTexture(GL_TEXTURE_2D,0);	
+	
+}
+
+
+
+
+void Scene::injectDirectLighting(Lightmap const &lightmap){
+	// Create framebuffer
+	GLint prev_viewport[4];
+	glGetIntegerv(GL_VIEWPORT, prev_viewport);
+
+	GLuint fbo;
+	glGenFramebuffers(1, &fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
+
+	// ensure color attachment is the draw buffer for this FBO
+	{
+		GLenum draw_buffers[1] = { GL_COLOR_ATTACHMENT0 };
+		glDrawBuffers(1, draw_buffers);
+	}
+	//attach lightmap texture to framebuffer
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 
+                          GL_TEXTURE_2D, lightmap.tex, 0);
+	// Set viewport to lightmap size   
+	glViewport(0, 0, lightmap.width, lightmap.height);
+
+	// ensure FBO is complete
+	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	if (status != GL_FRAMEBUFFER_COMPLETE) {
+		throw std::runtime_error("Framebuffer incomplete when creating lightmap (status=" + std::to_string(status) + ")");
+	}
+    
+	// Clear to black (no light)
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+	//depth test to avoid light leaking through walls
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	glClearDepth(1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    // Enable additive blending (multiple lights)
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    
+	//get the direct light inject pipeline
+	Scene::Drawable::Pipeline const &pipeline = direct_light_inject_pipeline;
+    // Use inject shader
+	glUseProgram(pipeline.program);
+	// if (pipeline.WORLD_FROM_OBJECT_mat4 == -1U && pipeline.WORLD_FROM_OBJECT_mat4x3 == -1U) {
+	// 	throw std::runtime_error("DirectLightInjectProgram pipeline missing WORLD_FROM_OBJECT (mat4 or mat4x3) uniform");
+	// }
+	if(pipeline.LIGHT_FROM_OBJECT_mat4x3 == -1U ) {
+		throw std::runtime_error("DirectLightInjectProgram pipeline missing LIGHT_FROM_OBJECT_mat4x3 uniform");
+	}
+	if(pipeline.LIGHT_FROM_NORMAL_mat3 == -1U ) {
+		throw std::runtime_error("DirectLightInjectProgram pipeline missing LIGHT_FROM_NORMAL_mat3 uniform");
+	}
+
+	// if(pipeline.LIGHT_LOCATION_vec3 == -1U ) {
+	// 	throw std::runtime_error("DirectLightInjectProgram pipeline missing LIGHT_LOCATION_vec3 uniform");
+	// }
+	if(pipeline.LIGHT_ENERGY_vec3 == -1U ) {
+		throw std::runtime_error("DirectLightInjectProgram pipeline missing LIGHT_ENERGY_vec3 uniform");
+	}
+
+    // Render scene once per light
+    for (const Light& light : lights) {
+		
+		glUniform3fv(pipeline.LIGHT_LOCATION_vec3, 1, glm::value_ptr(light.transform->position));
+		glUniform3fv(pipeline.LIGHT_ENERGY_vec3, 1, glm::value_ptr(light.energy));
+		// set cutoff to avoid division by zero in shader
+		glUniform1f(pipeline.LIGHT_CUTOFF_float, 1.0f);
+		
+        //inject the light into only the static scene meshes
+        for (auto const &drawable : drawables) {
+			//only if it uses color texture pipeline
+			if(drawable.pipeline.program != color_texture_pipeline.program) continue;
+			assert(drawable.transform); //drawables *must* have a transform
+			glm::mat4x3 world_from_object = drawable.transform->make_world_from_local();
+			if (pipeline.WORLD_FROM_OBJECT_mat4 != -1U) {
+				glm::mat4 world_from_object_4 = glm::mat4(world_from_object);
+				glUniformMatrix4fv(pipeline.WORLD_FROM_OBJECT_mat4, 1, GL_FALSE, glm::value_ptr(world_from_object_4));
+			} else if (pipeline.WORLD_FROM_OBJECT_mat4x3 != -1U) {
+				glUniformMatrix4x3fv(pipeline.WORLD_FROM_OBJECT_mat4x3, 1, GL_FALSE, glm::value_ptr(world_from_object));
+			}
+
+			//here, light_space is just world space
+			glm::mat4x3 light_from_object =  glm::mat4(world_from_object);
+			glUniformMatrix4x3fv(pipeline.LIGHT_FROM_OBJECT_mat4x3, 1, GL_FALSE, glm::value_ptr(light_from_object));
+			glm::mat3 light_from_normal = glm::inverse(glm::transpose(glm::mat3(light_from_object)));
+			glUniformMatrix3fv(pipeline.LIGHT_FROM_NORMAL_mat3, 1, GL_FALSE, glm::value_ptr(light_from_normal));
+			//set light specific uniforms
+			glUniform1i(pipeline.LIGHT_TYPE_int, static_cast<int>(light.type));
+			glUniform3fv(pipeline.LIGHT_LOCATION_vec3, 1, glm::value_ptr(light.transform->position));
+			glUniform3fv(pipeline.LIGHT_ENERGY_vec3, 1, glm::value_ptr(light.energy));
+			//optional uniforms for different light types
+			if(pipeline.LIGHT_CUTOFF_float != -1U){
+				std::cout<<"spot fov: "<<light.spot_fov<<std::endl;
+				glUniform1f(pipeline.LIGHT_CUTOFF_float, light.spot_fov*0.5f);
+			}
+			if(pipeline.LIGHT_DIRECTION_vec3 != -1U){
+				glm::vec3 direction = glm::normalize(-glm::mat3_cast(light.transform->rotation) * glm::vec3(0.0f, 0.0f, 1.0f));
+				glUniform3fv(pipeline.LIGHT_DIRECTION_vec3, 1, glm::value_ptr(direction));
+			}     
+            glBindVertexArray(drawable.pipeline.vao);
+            glDrawArrays(GL_TRIANGLES, drawable.pipeline.start, drawable.pipeline.count);
+        }
+    }
+    
+	glDisable(GL_BLEND);
+	// re-enable depth test for subsequent scene rendering
+
+
+	// restore previous framebuffer/viewport
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glViewport(prev_viewport[0], prev_viewport[1], prev_viewport[2], prev_viewport[3]);
+	glDeleteFramebuffers(1, &fbo);
+}
+
+
 void Scene::draw(Camera const &camera) const {
 	assert(camera.transform);
 	glm::mat4 clip_from_world = camera.make_projection() * glm::mat4(camera.transform->make_local_from_world());
-	glm::mat4x3 light_from_world = glm::mat4x3(1.0f);
+
+	//right now it's just one light
+	glm::mat4x3 light_from_world = lights.begin()->transform->make_local_from_world();
 	draw(clip_from_world, light_from_world);
 }
+
+
 
 void Scene::draw(glm::mat4 const &clip_from_world, glm::mat4x3 const &light_from_world) const {
 
@@ -107,6 +340,12 @@ void Scene::draw(glm::mat4 const &clip_from_world, glm::mat4x3 const &light_from
 		//Set shader program:wd
 		glUseProgram(pipeline.program);
 
+		if(pipeline.program == color_texture_pipeline.program){
+			glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, drawable.pipeline.textures[0].texture);	
+
+			
+		}
 		//Set attribute sources:
 		glBindVertexArray(pipeline.vao);
 
@@ -116,22 +355,11 @@ void Scene::draw(glm::mat4 const &clip_from_world, glm::mat4x3 const &light_from
 		assert(drawable.transform); //drawables *must* have a transform
 		
 		glm::mat4x3 world_from_object = drawable.transform->make_world_from_local();
-		// Debug output:
-		if (drawable.transform->name == "Room.016" || drawable.transform->name == "FootM") {
-			std::cout << "Drawing: " << drawable.transform->name << std::endl;
-			std::cout << "  Transform address: " << drawable.transform << std::endl;
-			std::cout << "  Transform position: " << glm::to_string(drawable.transform->position) << std::endl;
-			std::cout << "  Transform rotation: " << glm::to_string(drawable.transform->rotation) << std::endl;
-			std::cout << "  Parent: " << drawable.transform->parent << std::endl;
-			std::cout << "  World matrix column 3 (translation): " << glm::to_string(glm::vec3(world_from_object[3])) << std::endl;
-			std::cout << "  VAO: " << pipeline.vao << std::endl;
-			std::cout<< "  Program: " << pipeline.program << std::endl;
-			std::cout << "  Mesh start: " << pipeline.start << std::endl;
-			std::cout << "  Mesh count: " << pipeline.count << std::endl;
-			std::cout << std::endl;
+		
+
+		if (pipeline.WORLD_FROM_OBJECT_mat4 != -1U) {
+			glUniformMatrix4fv(pipeline.WORLD_FROM_OBJECT_mat4, 1, GL_FALSE, glm::value_ptr(world_from_object));
 		}
-
-
 
 		//CLIP_FROM_OBJECT takes vertices from object space to clip space:
 		if (pipeline.CLIP_FROM_OBJECT_mat4 != -1U) {
@@ -146,7 +374,7 @@ void Scene::draw(glm::mat4 const &clip_from_world, glm::mat4x3 const &light_from
 		if (pipeline.LIGHT_FROM_OBJECT_mat4x3 != -1U) {
 			glUniformMatrix4x3fv(pipeline.LIGHT_FROM_OBJECT_mat4x3, 1, GL_FALSE, glm::value_ptr(light_from_object));
 		}
-
+		
 		//LIGHT_FROM_NORMAL takes normals from object space to light space:
 		if (pipeline.LIGHT_FROM_NORMAL_mat3 != -1U) {
 			glm::mat3 light_from_normal = glm::inverse(glm::transpose(glm::mat3(light_from_object)));
@@ -163,6 +391,7 @@ void Scene::draw(glm::mat4 const &clip_from_world, glm::mat4x3 const &light_from
 				glBindTexture(pipeline.textures[i].target, pipeline.textures[i].texture);
 			}
 		}
+
 
 		//draw the object:
 		glDrawArrays(pipeline.type, pipeline.start, pipeline.count);
@@ -314,6 +543,7 @@ void Scene::load(std::string const &filename,
 			std::cout << "Ignoring unrecognized lamp type (" + std::string(&l.type, 1) + ") stored in file." << std::endl;
 			continue;
 		}
+		std::cout<<"got light "<<l.type<<std::endl;
 		lights.emplace_back(hierarchy_transforms[l.transform]);
 		Light *light = &lights.back();
 		light->type = static_cast<Light::Type>(l.type);
@@ -327,9 +557,6 @@ void Scene::load(std::string const &filename,
 	if (file.peek() != EOF) {
 		std::cerr << "WARNING: trailing data in scene file '" << filename << "'" << std::endl;
 	}
-
-
-
 }
 
 //-------------------------

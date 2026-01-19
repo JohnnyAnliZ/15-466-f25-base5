@@ -1,5 +1,4 @@
 #include "PlayMode.hpp"
-
 #include "LitColorTextureProgram.hpp"
 #include "Registry.hpp"
 
@@ -8,7 +7,10 @@
 #include "data_path.hpp"
 #include "Mesh.hpp"
 #include "Load.hpp"
+#include "Scene.hpp"
 #include "hex_dump.hpp"
+#include "load_save_png.hpp"
+
 
 #include <glm/gtc/type_ptr.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
@@ -23,7 +25,7 @@
 
 
 
-PlayMode::PlayMode(Client &client_) : client(client_),scene(*sumo_scene){
+PlayMode::PlayMode(Client &client_) : client(client_),scene(*(sumo_scene.value)){
 
 
 	//std::cout << "no camera" << game.players.size() << std::endl;
@@ -86,12 +88,33 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			controls.jump.pressed = false;
 			return true;
 		}
-	}
+	}//----- trackball-style camera controls -----
 
+	if (evt.type == SDL_EVENT_MOUSE_MOTION) {
+		if (evt.motion.state & SDL_BUTTON_MASK(SDL_BUTTON_LEFT)) {
+			//figure out the motion (as a fraction of a normalized [-a,a]x[-1,1] window):
+			glm::vec2 delta;
+			delta.x = evt.motion.xrel / float(window_size.x) * 2.0f;
+			delta.x *= float(window_size.y) / float(window_size.x);
+			delta.y = evt.motion.yrel / float(window_size.y) * -2.0f;
+
+			yaw_offset -= 30.0f * delta.x;
+			return true;
+		}
+	}
 	return false;
 }
 
 void PlayMode::update(float elapsed) {
+	poll_connection(elapsed);
+	update_players(elapsed);
+	update_camera(elapsed);
+	update_lights(elapsed);
+	update_control(elapsed);
+	send_message(elapsed);
+}
+
+void PlayMode::poll_connection(float elapsed){
 	//send/receive data:
 	client.poll([this](Connection *c, Connection::Event event){
 		if (event == Connection::OnOpen) {
@@ -114,7 +137,46 @@ void PlayMode::update(float elapsed) {
 			}
 		}
 	}, 0.0);
+}
 
+
+void PlayMode::update_control(float elapsed) {
+	controls.send_controls_message(&client.connection);
+	//reset button press counters:
+	controls.left.downs = 0;
+	controls.right.downs = 0;
+	controls.up.downs = 0;
+	controls.down.downs = 0;
+	controls.jump.downs = 0;
+}
+
+void PlayMode::update_camera(float elapsed){
+	{//update camera to follow the torso based on player.yaw and world position	
+		glm::vec3 torso_pos = torso->make_world_from_local() * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+		yaw = game.players.front().yaw + yaw_offset;
+		float how_far_back = 30.0f;
+		float how_much_taller = 10.0f;
+		camera->transform->position = torso_pos + glm::vec3(0.0f, 0.0f, how_much_taller) + glm::vec3(how_far_back * std::sin(glm::radians(yaw)), -how_far_back * std::cos(glm::radians(yaw)), 0.0f);
+		camera->transform->rotation = glm::angleAxis(glm::radians(yaw), glm::vec3(0.0f, 0.0f, 1.0f)) * glm::quat(0.801f, 0.599f, 0.0f, 0.0f);
+	}
+}
+
+void PlayMode::update_lights(float elapsed){
+	//debugging box
+	DrawLines draw_lines(camera->make_projection() * glm::mat4(camera->transform->make_local_from_world()));
+
+	auto &lite = scene.lights.front();
+	Scene::Transform *t = lite.transform;
+	glm::vec3 torso_pos = torso->make_world_from_local() * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+	yaw = game.players.front().yaw;
+	float how_far_back = -10.0f;
+	float how_much_taller = 10.0f;
+	t->position = torso_pos + glm::vec3(0.0f, 0.0f, how_much_taller) + glm::vec3(how_far_back * std::sin(glm::radians(yaw)), -how_far_back * std::cos(glm::radians(yaw)), 0.0f);
+	t->rotation = glm::angleAxis(glm::radians(yaw), glm::vec3(0.0f, 0.0f, 1.0f)) * glm::quat(0.801f, 0.599f, 0.0f, 0.0f);
+	
+	
+}
+void PlayMode::update_players(float elapsed){
 	//clean up opponents that are no longer present
 	for(auto it = opponents.begin(); it != opponents.end(); ) {
 		bool found = false;
@@ -133,8 +195,6 @@ void PlayMode::update(float elapsed) {
 			++it;
 		}
 	}
-
-	
 
 	//if the size of players is larger than current number
 	if (game.players.size() > players) {
@@ -245,7 +305,7 @@ void PlayMode::update(float elapsed) {
 			addDrawables(scene, pit->head, "HeadM");
 			addDrawables(scene, pit->torso, "TorsoM");
 			addDrawables(scene, pit->foot, "FootM");
-
+			addDrawables(scene, scene.lights.front().transform, "HeadM");
 			end--;
 			pit = &(*end);
 			players++;
@@ -318,24 +378,9 @@ void PlayMode::update(float elapsed) {
 			opponents[player.id].torso->position.x = -1.0f * sign * XY;
 		}
 	}
+}
 
-	{//update camera to follow the torso based on player.yaw and world position	
-		// glm::vec3 torso_pos = torso->make_world_from_local() * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-		// float yaw = game.players.front().yaw;
-		// camera->transform->position = torso_pos + glm::vec3(0.0f, 0.0f, 5) + glm::vec3(10.0 * std::sin(glm::radians(yaw)), -10.0f * std::cos(glm::radians(yaw)), 0.0f);
-		// camera->transform->rotation = glm::angleAxis(glm::radians(yaw), glm::vec3(0.0f, 0.0f, 1.0f)) * glm::quat(0.801f, 0.599f, 0.0f, 0.0f);
-	}
-
-	{//controls
-		controls.send_controls_message(&client.connection);
-		//reset button press counters:
-		controls.left.downs = 0;
-		controls.right.downs = 0;
-		controls.up.downs = 0;
-		controls.down.downs = 0;
-		controls.jump.downs = 0;
-	}
-
+void PlayMode::send_message(float elapsed){
 	client.connection.send(Message::C2S_Vec3);
 	if(game.players.size() ==0) {
 		std::cout << "no players to send position for" << std::endl;
@@ -345,8 +390,8 @@ void PlayMode::update(float elapsed) {
 		float ZO = game.players.front().TTFOZ;
 		float XYO = game.players.front().TTFOXY;
 		float s = game.players.front().rightFoot ? -1.0f : 1.0f;
-		float yaw = game.players.front().yaw;
-		glm::vec3 offSet = glm::vec3(s * std::cos(glm::radians(yaw)) * XYO, -s * std::sin(glm::radians(yaw)) * XYO, ZO);
+		float yeehaw = game.players.front().yaw;
+		glm::vec3 offSet = glm::vec3(s * std::cos(glm::radians(yeehaw)) * XYO, -s * std::sin(glm::radians(yeehaw)) * XYO, ZO);
 		glm::vec3 snd = foot->position + offSet;
 		client.connection.send(snd);
 		client.connection.send(game.players.front().id);
@@ -360,23 +405,69 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		//update camera aspect ratio for drawable:
 	camera->aspect = float(drawable_size.x) / float(drawable_size.y);
 
-	//set up light type and position for lit_color_texture_program:
-	// TODO: consider using the Light(s) in the scene to do this
-	glUseProgram(lit_color_texture_program->program);
-	glUniform1i(lit_color_texture_program->LIGHT_TYPE_int, 1);
-	glUniform3fv(lit_color_texture_program->LIGHT_DIRECTION_vec3, 1, glm::value_ptr(glm::vec3(0.0f, 0.0f, -1.0f)));
-	glUniform3fv(lit_color_texture_program->LIGHT_ENERGY_vec3, 1, glm::value_ptr(glm::vec3(1.0f, 1.0f, 0.95f)));
-	glUseProgram(0);
-
 	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
 	glClearDepth(1.0f); //1.0 is actually the default value to clear the depth buffer to, but FYI you can change it.
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS); //this is the default depth comparison function, but FYI you can change it.
 
+	//inject direct lighting into lightmap
+	scene.injectDirectLighting(*(lightmap.value));
+
+	// Debug: read lightmap via an FBO and glReadPixels (more portable than glGetTexImage)
+	{
+		GLint prev_fbo = 0;
+		glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_fbo);
+
+		GLuint tmp_fbo = 0;
+		glGenFramebuffers(1, &tmp_fbo);
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, tmp_fbo);
+		glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, lightmap->tex, 0);
+		GLenum status = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+		if (status == GL_FRAMEBUFFER_COMPLETE) {
+			int w = int(lightmap->width);
+			int h = int(lightmap->height);
+			std::vector<float> pixels(3 * w * h);
+			glReadBuffer(GL_COLOR_ATTACHMENT0);
+			glReadPixels(0, 0, w, h, GL_RGB, GL_FLOAT, pixels.data());
+
+			// tone-map/convert to 8-bit and save:
+			std::vector<glm::u8vec4> out(w * h);
+			float exposure = 1.0f;
+			auto tonemap = [](float v)->unsigned char { v = v / (1.0f + v); return (unsigned char)(glm::clamp(v, 0.0f, 1.0f) * 255.0f); };
+			for (int i = 0; i < w * h; ++i) {
+				out[i] = glm::u8vec4(tonemap(pixels[3*i+0]*exposure), tonemap(pixels[3*i+1]*exposure), tonemap(pixels[3*i+2]*exposure), 255);
+			}
+			save_png("lightmap_dump.png", glm::uvec2(w, h), out.data(), LowerLeftOrigin);
+		} else {
+			std::cerr << "Failed to attach lightmap texture to temporary FBO (status=" << status << ")" << std::endl;
+		}
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_fbo);
+		glDeleteFramebuffers(1, &tmp_fbo);
+	}
 	scene.draw(*camera);
 
-
-	GL_ERRORS();
+	//draw debug line for light
+	// GLuint debug_vbo, debug_vao;
+	// glGenVertexArrays(1, &debug_vao);
+	// glGenBuffers(1, &debug_vbo);
+	// std::vector<glm::vec3> debug_lines;
+	// debug_lines.push_back(scene.lights.front().transform->position);
+	// debug_lines.push_back(scene.lights.front().transform->position + glm::vec3(0.0f,0.0f,3.0f));
+	// glBindVertexArray(debug_vao);
+	// glBindBuffer(GL_ARRAY_BUFFER, debug_vbo);
+	// glBufferData(GL_ARRAY_BUFFER, debug_lines.size() * sizeof(glm::vec3), debug_lines.data(), GL_STATIC_DRAW);
+	// glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+	// glEnableVertexAttribArray(0);
+	// glUseProgram(lit_color_texture_program->program);
+	// glm::mat4 clip_from_world = camera->make_projection() * glm::mat4(camera->transform->make_local_from_world());
+	// glUniformMatrix4fv(lit_color_texture_program->CLIP_FROM_OBJECT_mat4, 1, GL_FALSE, glm::value_ptr(clip_from_world));
+	// glDrawArrays(GL_LINES, 0, (GLsizei)debug_lines.size());
+	// glEnable(GL_DEPTH_TEST);
+	// glDepthFunc(GL_LESS);
+	// glBindVertexArray(0);
+	// glBindBuffer(GL_ARRAY_BUFFER, 0);
+	// glDeleteBuffers(1, &debug_vbo);
+	// glDeleteVertexArrays(1, &debug_vao);
+	// GL_ERRORS();
 }

@@ -2,12 +2,13 @@
 #include "data_path.hpp"
 #include "load_save_png.hpp"
 #include "LitColorTextureProgram.hpp"
+#include "DirectLightInjectProgram.hpp"
 #include "ColorTextureProgram.hpp"
 #include "GL.hpp"
 #include <glm/glm.hpp>
 #include <iostream>
 
-static TextureLoadingInfo *load_texture_from_png(const std::string &path, bool use_mipmap, bool repeat)
+static Texture *load_texture_from_png(const std::string &path, bool use_mipmap, bool repeat)
 {
     glm::uvec2 size;
     std::vector<glm::u8vec4> data;
@@ -31,13 +32,24 @@ static TextureLoadingInfo *load_texture_from_png(const std::string &path, bool u
     }
 
     glBindTexture(GL_TEXTURE_2D, 0);
-    return new TextureLoadingInfo(tex, size.x, size.y);
+    return new Texture(tex, size.x, size.y);
 }
 
 
 //--- Textures ---
-Load<TextureLoadingInfo> lightmap_texture(LoadTagDefault,[]() -> TextureLoadingInfo const* {
+Load<Texture> noise_texture(LoadTagDefault,[]() -> Texture const* {
     return load_texture_from_png(data_path("resources/textures/noise.png"),false,false);
+});
+
+//--- light map texture ---
+
+
+Load<Lightmap> lightmap(LoadTagDefault, []() -> Lightmap const* {
+    return new Lightmap(256, 256);
+});
+
+Load<Cubemap> cubemap(LoadTagDefault, []() -> Cubemap const*{
+    return new Cubemap(512);
 });
 
 
@@ -50,10 +62,10 @@ Load< MeshBuffer > sumo_character_meshes(LoadTagDefault, []() -> MeshBuffer cons
 	return ret;
 	});
 
-GLuint sumo_scene_meshes_for_lit_color_texture_program = 1;
+GLuint sumo_scene_meshes_vao = 0;
 Load< MeshBuffer > sumo_scene_meshes(LoadTagDefault, []() -> MeshBuffer const* {
 	MeshBuffer const* ret = new MeshBuffer(data_path("sumo_scene.pnct"));
-	sumo_scene_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
+	sumo_scene_meshes_vao = ret->make_vao_for_program(lit_color_texture_program->program);
 	return ret;
 	});
 
@@ -64,13 +76,14 @@ return new Scene(data_path("sumo.scene"), [&](Scene& scene, Scene::Transform* tr
         scene.drawables.emplace_back(transform);
         transform->name = mesh_name;
         Scene::Drawable& drawable = scene.drawables.back();
-        drawable.pipeline.program = lit_color_texture_program->program;
-        drawable.pipeline.vao = sumo_scene_meshes_for_lit_color_texture_program;
+        drawable.pipeline = color_texture_pipeline;
+        drawable.pipeline.program = color_texture_program->program;
+        drawable.pipeline.vao = sumo_scene_meshes_vao;
         drawable.pipeline.type = mesh.type;
-        drawable.pipeline.start = mesh.start;
+        drawable.pipeline.start = mesh.start;   
         drawable.pipeline.count = mesh.count;
         drawable.pipeline.textures[0].target = GL_TEXTURE_2D;
-        drawable.pipeline.textures[0].texture = lightmap_texture->texture;
+        drawable.pipeline.textures[0].texture = lightmap->tex;
     });
 });
 

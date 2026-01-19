@@ -1,22 +1,19 @@
-#include "ColorTextureProgram.hpp"
+#include "CubemapProgram.hpp"
 #include "gl_compile_program.hpp"
 #include "gl_errors.hpp"
 
-Load< ColorTextureProgram > color_texture_program(LoadTagEarly, []() -> ColorTextureProgram const * {
-	ColorTextureProgram *ret = new ColorTextureProgram();
-	color_texture_pipeline.program = ret->program;
-
-	
-	color_texture_pipeline.CLIP_FROM_OBJECT_mat4 = ret->CLIP_FROM_OBJECT_mat4;
+Load< CubemapProgram > cubemap_program(LoadTagEarly, []() -> CubemapProgram const * {
+	CubemapProgram *ret = new CubemapProgram();
+	cubemap_pipeline.program = ret->program;
 	return ret;
 });
 
-ColorTextureProgram::ColorTextureProgram() {
-	//Compile vertex and fragment shaders using the convenient 'gl_compile_program' helper function:
+CubemapProgram::CubemapProgram() {
+	//shader to rasterize texcoords onto one face of the cubemap
 	program = gl_compile_program(
 		//vertex shader:
 		"#version 330\n"
-		"uniform mat4 CLIP_FROM_OBJECT;\n"
+        "uniform mat4x3 CLIP_FROM_OBJECT; "
 		"in vec4 Position;\n"
 		"in vec3 Normal;\n"
 		"in vec4 Color;\n"
@@ -35,19 +32,15 @@ ColorTextureProgram::ColorTextureProgram() {
 	,
 		//fragment shader:
 		"#version 330\n"
-		"uniform sampler2D TEX;\n"
 		"in vec3 position;\n"
 		"in vec3 normal;\n"
 		"in vec4 color;\n"
 		"in vec2 texCoord;\n"
-		"out vec4 fragColor;\n"
+		"out vec2 fragColor;\n"
 		"void main() {\n"
-		"	vec4 albedo = texture(TEX, texCoord) * color;\n"
-		"	fragColor = vec4(albedo.rgb, albedo.a);\n"
+		"	fragColor = texCoord;\n"
 		"}\n"
 	);
-	//As you can see above, adjacent strings in C/C++ are concatenated.
-	// this is very useful for writing long shader programs inline.
 
 	//look up the locations of vertex attributes:
 	Position_vec4 = glGetAttribLocation(program, "Position");
@@ -55,20 +48,11 @@ ColorTextureProgram::ColorTextureProgram() {
 	Color_vec4 = glGetAttribLocation(program, "Color");
 	TexCoord_vec2 = glGetAttribLocation(program, "TexCoord");
 
-	//look up the locations of uniforms:
-	CLIP_FROM_OBJECT_mat4 = glGetUniformLocation(program, "CLIP_FROM_OBJECT");
-	GLuint TEX_sampler2D = glGetUniformLocation(program, "TEX");
-
-	//set TEX to always refer to texture binding zero:
 	glUseProgram(program); //bind program -- glUniform* calls refer to this program now
-
-	glUniform1i(TEX_sampler2D, 0); //set TEX to sample from GL_TEXTURE0
-
 	glUseProgram(0); //unbind program -- glUniform* calls refer to ??? now
 }
 
-ColorTextureProgram::~ColorTextureProgram() {
+CubemapProgram::~CubemapProgram() {
 	glDeleteProgram(program);
 	program = 0;
 }
-

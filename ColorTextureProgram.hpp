@@ -2,6 +2,7 @@
 
 #include "GL.hpp"
 #include "Load.hpp"
+#include "Scene.hpp"
 
 //Shader program that draws transformed, vertices tinted with vertex colors:
 struct ColorTextureProgram {
@@ -12,6 +13,7 @@ struct ColorTextureProgram {
 	//Attribute (per-vertex variable) locations:
 	GLuint Position_vec4 = -1U;
 	GLuint Color_vec4 = -1U;
+	GLuint Normal_vec3 = -1U;
 	GLuint TexCoord_vec2 = -1U;
 	//Uniform (per-invocation variable) locations:
 	GLuint CLIP_FROM_OBJECT_mat4 = -1U;
@@ -20,3 +22,5 @@ struct ColorTextureProgram {
 };
 
 extern Load< ColorTextureProgram > color_texture_program;
+
+inline Scene::Drawable::Pipeline color_texture_pipeline;

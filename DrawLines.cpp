@@ -41,7 +41,7 @@ static Load< void > setup_buffers(LoadTagDefault, [](){
 		);
 		glEnableVertexAttribArray(color_program->Position_vec4);
 		//[Note that it is okay to bind a vec3 input to a vec4 attribute -- the w component will be filled with 1.0 automatically]
-
+		
 		glVertexAttribPointer(
 			color_program->Color_vec4, //attribute
 			4, //size

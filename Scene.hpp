@@ -11,16 +11,88 @@
  */
 
 #include "GL.hpp"
+#include "Load.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <list>
+#include <array>
 #include <memory>
 #include <functional>
 #include <string>
 #include <vector>
 #include <unordered_map>
+
+
+struct Texture {
+    GLuint tex = 0;
+    uint32_t width,height = 0;
+    Texture(GLuint t, uint32_t w, uint32_t h) : tex(t), width(w), height(h) {};
+    Texture(): tex(0),width(0),height(0){};
+    GLenum target = GL_TEXTURE_2D;
+};
+
+
+//Stores a texture that can be rendered to for light mapping
+struct Lightmap: public Texture {
+    //constructor where you don't bind the texture altogether
+    Lightmap(GLuint t, int w, int h) : Texture(t,w,h) {}
+
+    //constructor where you bind the texture altogether
+    Lightmap(int w, int h){
+		width = w;
+		height = h;
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        
+        // RGB for lighting, use floating point for HDR
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, 
+                     GL_RGB, GL_FLOAT, nullptr);
+        
+        // Linear filtering (lighting is smooth)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        
+        // Clear to black
+        std::vector<glm::vec3> blackData(w * h, glm::vec3(0.0f));
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, 
+                       GL_RGB, GL_FLOAT, blackData.data());
+    }
+};
+
+struct Cubemap{
+	GLuint tex;
+	uint32_t width;
+	GLenum target = GL_TEXTURE_2D;
+
+	Cubemap(uint32_t width){
+		glGenTextures(1, &tex);
+		glBindTexture(GL_TEXTURE_CUBE_MAP, tex);
+		
+		// Create 6 faces, each storing RG (U,V) as floats
+		for (int face = 0; face < 6; face++) {
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 
+						0, GL_RG32F,  // 2 channels, 32-bit float
+						width, width, 0,
+						GL_RG, GL_FLOAT, nullptr);
+		}
+		
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+		
+		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+	};
+};
+
+
+
+
 
 struct Scene {
 	struct Transform {
@@ -66,6 +138,8 @@ struct Scene {
 			GLuint count = 0; //number of vertices to draw; passed to glDrawArrays
 
 			//uniforms:
+			GLuint WORLD_FROM_OBJECT_mat4 = -1U;
+			GLuint WORLD_FROM_OBJECT_mat4x3 = -1U;
 			GLuint CLIP_FROM_OBJECT_mat4 = -1U; //uniform location for object to clip space matrix
 			GLuint LIGHT_FROM_OBJECT_mat4x3 = -1U; //uniform location for object to light space (== world space) matrix
 			GLuint LIGHT_FROM_NORMAL_mat3 = -1U; //uniform location for normal to light space (== world space) matrix
@@ -125,6 +199,15 @@ struct Scene {
 	std::list< Drawable > drawables;
 	std::list< Camera > cameras;
 	std::list< Light > lights;
+
+	//render scene uv coordinates to cubemap
+	void Scene::renderToCubemap(Cubemap const &cubemap, Scene::Camera const &camera, Light const& light);
+	//inject light using Cubemap, this one should have shadows
+	void Scene::injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &lightmap, Light const &light);
+
+	//inject light into the lightmap texture
+	//takes Lightmap by const-ref to avoid needing a full definition here
+	void injectDirectLighting(Lightmap const &lightmap);
 
 	//The "draw" function provides a convenient way to pass all the things in a scene to OpenGL:
 	void draw(Camera const &camera) const;

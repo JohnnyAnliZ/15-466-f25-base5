@@ -18,6 +18,14 @@ struct PlayMode : Mode {
 	//functions called by main loop:
 	virtual bool handle_event(SDL_Event const &, glm::uvec2 const &window_size) override;
 	virtual void update(float elapsed) override;
+	//sub function to manage update loops
+	void poll_connection(float elapsed);
+	void update_players(float elapsed);
+	void update_camera(float elapsed);
+	void update_lights(float elapsed);
+	void send_message(float elapsed);
+	void update_control(float elapsed);
+
 	virtual void draw(glm::uvec2 const &drawable_size) override;
 
 
@@ -28,7 +36,8 @@ struct PlayMode : Mode {
 
 	//camera:
 	Scene::Camera* camera = nullptr;
-
+	float yaw = 0.0f;
+	float yaw_offset = 0.0f;
 	//----- game state -----
 
 	//the transforms to controll using the game state sent from the server
