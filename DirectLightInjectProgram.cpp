@@ -68,9 +68,9 @@ void main() {
 	//eqauation to balance light contribution given by 
 	//https://rasmusbarr.github.io/blog/
 	//get total number of pixels
-	float n = 6 * pow(textureSize(Cubemap, 0).width,2);
-	float denominator = pow(pow(L.x,2) + pow(L.y,2) + 1,1.5);
-	lightOutput = vec4(LIGHT_ENERGY * 24 /(n * denominator),1.0);
+	float n = 6.0 * pow(textureSize(Cubemap, 0).x,2.0);
+	float denominator = pow(pow(L.x,2.0) + pow(L.y,2.0) + 1.0,1.5);
+	lightOutput = vec4(LIGHT_ENERGY * 24.0 /(n * denominator),1.0);
 }
 )";
 

@@ -100,49 +100,72 @@ void Scene::renderToCubemap(Cubemap const &cubemap, Scene::Camera const &camera,
 		glDrawBuffers(1, draw_buffers);
 	}
 
-	//render the scene throguh all 6 faces
-	for(uint32_t i = 0; i < 6; i++){
-		//attach the cubemap face to framebuffer
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-		GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, cubemap.tex, 0);
-		glViewport(0,0,cubemap.width,cubemap.width);
-		// ensure FBO is complete
-		GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-		if (status != GL_FRAMEBUFFER_COMPLETE) {
-			throw std::runtime_error("Framebuffer incomplete when creating lightmap (status=" + std::to_string(status) + ")");
-		}
-		// Clear to black (no light)
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		//depth test to only get texture coordinates the light could see
-		glEnable(GL_DEPTH_TEST);
-		glDepthFunc(GL_LESS);
-		glClearDepth(1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		//draw to each face using the pipeline
+	//enable depth test
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	GLuint depth;
+	glGenRenderbuffers(1, &depth);
+	glBindRenderbuffer(GL_RENDERBUFFER, depth);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+						cubemap.width, cubemap.width);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+							GL_RENDERBUFFER, depth);
+	//disable blend
+	glDisable(GL_BLEND);
+	{//draw to each face using the pipeline
 		Scene::Drawable::Pipeline &pipeline = cubemap_pipeline;
 		glUseProgram(pipeline.program);
-		glm::mat4 projection = glm::infinitePerspective(glm::radians(90.0f), 1.0f, 0.01f);
-		
-		glm::mat4 views[6] = {
-			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 1, 0, 0), glm::vec3(0,-1, 0)),
-			glm::lookAt(light.transform->position, light.transform->position + glm::vec3(-1, 0, 0), glm::vec3(0,-1, 0)),
-			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 1, 0), glm::vec3(0, 0, 1)),
-			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0,-1, 0), glm::vec3(0, 0,-1)),
-			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 0, 1), glm::vec3(0,-1, 0)),
-			glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 0,-1), glm::vec3(0,-1, 0)),
-		};
-		for(auto const & drawable: drawables){
-			glm::mat4x3 world_from_object = drawable.transform->make_world_from_local();
-			glm::mat4 clip_from_world = projection * views[i];
-			glm::mat4 clip_from_object = clip_from_world * glm::mat4(world_from_object);
-			glUniformMatrix4fv(pipeline.CLIP_FROM_OBJECT_mat4, 1, GL_FALSE, glm::value_ptr(clip_from_object));
-			glBindVertexArray(drawable.pipeline.vao);
-            glDrawArrays(GL_TRIANGLES, drawable.pipeline.start, drawable.pipeline.count);
-			GL_ERRORS();
+		for(uint32_t i = 0; i < 6; i++){
+			//attach the cubemap face to framebuffer
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+			GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, cubemap.tex, 0);
+			glViewport(0,0,cubemap.width,cubemap.width);
+			// ensure FBO is complete
+			GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+			if (status != GL_FRAMEBUFFER_COMPLETE) {
+				throw std::runtime_error("Framebuffer incomplete when creating lightmap (status=" + std::to_string(status) + ")");
+			}
+			glClearDepth(1.0f);
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+			
+    
+			glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, 100.0f);
+			
+			glm::mat4 views[6] = {
+				glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 1, 0, 0), glm::vec3(0,-1, 0)),
+				glm::lookAt(light.transform->position, light.transform->position + glm::vec3(-1, 0, 0), glm::vec3(0,-1, 0)),
+				glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 1, 0), glm::vec3(0, 0, 1)),
+				glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0,-1, 0), glm::vec3(0, 0,-1)),
+				glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 0, 1), glm::vec3(0,-1, 0)),
+				glm::lookAt(light.transform->position, light.transform->position + glm::vec3( 0, 0,-1), glm::vec3(0,-1, 0)),
+			};
+			for(auto const & drawable: drawables){
+				if(drawable.pipeline.program != color_texture_pipeline.program) continue;
+				
+				//std::cout<<"drawing "<<drawable.transform->name<<std::endl;
+				     
+				glm::mat4x3 world_from_object = drawable.transform->make_world_from_local();
+				glm::mat4 clip_from_world = projection * views[i];
+				glm::mat4 clip_from_object = clip_from_world * glm::mat4(world_from_object);
+				glUniformMatrix4fv(pipeline.CLIP_FROM_OBJECT_mat4, 1, GL_FALSE, glm::value_ptr(clip_from_object));
+				glBindVertexArray(drawable.pipeline.vao);
+				glDrawArrays(GL_TRIANGLES, drawable.pipeline.start, drawable.pipeline.count);
+				GL_ERRORS();
+			}
 		}
 	}
+	//delete and restore
+	glBindRenderbuffer(GL_RENDERBUFFER, 0);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glDeleteFramebuffers(1, &fbo);
+	glDeleteRenderbuffers(1, &depth);
+	glViewport(
+    prev_viewport[0],
+    prev_viewport[1],
+    prev_viewport[2],
+    prev_viewport[3]
+	);
 }
 
 //new inject direct lighting function that injects cubemap contents using the CPU instead of shaders
@@ -155,22 +178,41 @@ void Scene::injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &ligh
 	uint32_t cubemap_width = cubemap.width;
 	uint32_t cubemap_face_size = cubemap_width * cubemap_width; 
 	uint32_t cubemap_size = cubemap_face_size * 6; 
-	std::vector<UV> cubemap_uvs; 
-	cubemap_uvs.reserve(cubemap_size);
+	std::vector<UV> cubemap_uvs(cubemap_size, UV{-1.0f,-1.0f});
 	// //declare vector to store lightmap initialized to black
 	std::vector<glm::vec4> lightmap_colors(lightmap.width * lightmap.height, glm::vec4(0.0f,0.0f,0.0f,1.0f));
+	
+	glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap.tex);
+	for (int i = 0; i < 6; ++i) {
+		GLint w = 0,  internal = 0;
+		glGetTexLevelParameteriv(
+			GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+			0,
+			GL_TEXTURE_WIDTH,
+			&w
+		);
+		glGetTexLevelParameteriv(
+			GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+			0,
+			GL_TEXTURE_INTERNAL_FORMAT,
+			&internal
+		);
 
-	for(uint32_t i = 0; i < 6; i ++){
-		glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap.tex);
-		glGetTexImage(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RG, GL_FLOAT, cubemap_uvs.data() + i * cubemap_width * cubemap_width);
-		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+		// std::cout << "Face " << i << " width=" << w
+		// 		<< " format=" << internal << std::endl;
 	}
+	for(uint32_t i = 0; i < 6; i ++){
+		glGetTexImage(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RG, GL_FLOAT, cubemap_uvs.data() + i * cubemap_face_size);	
+	}
+	GLenum err = glGetError();
+	assert(err == GL_NO_ERROR);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 	//write to the lightmap
 	for(uint32_t j = 0; j < cubemap_size; j++){
 		UV cur_uv = cubemap_uvs[j];
-		if (cur_uv.u == 0.0f && cur_uv.v == 0.0f) continue;
-		
+		if (cur_uv.u <= 0.0f && cur_uv.v <= 0.0f) continue;
+
+		//std::cout<<"actual uvs: "<< cur_uv.u << " "<< cur_uv.v<<std::endl;
 		//calculate using rasmus's equation
 		//this coordinate only keeps track of where in a cube face a pixel is in, doesn't map to each face
 		uint32_t x_texel = (j % cubemap_face_size) % cubemap_width;
@@ -178,10 +220,14 @@ void Scene::injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &ligh
 		glm::vec2 cubemap_coordinate;
 		cubemap_coordinate.x = (x_texel + 0.5f) / cubemap_width * 2.0f - 1.0f;  // -1 to 1
 		cubemap_coordinate.y = (y_texel + 0.5f) / cubemap_width * 2.0f - 1.0f;  // -1 to 1_width, 1);
-		float denominator = std::pow(std::pow(cubemap_coordinate.x,2) + std::pow(cubemap_coordinate.y, 2) + 1, 1.5f);
-		glm::vec4 lightOutput = glm::vec4(light.energy * 24.0f / (cubemap_size * denominator), 1.0);//rasmus's equation
-		uint32_t x = std::floor(cur_uv.u * lightmap.width);
-		uint32_t y = std::floor(cur_uv.v * lightmap.height);
+		float denominator = std::powf(std::powf(cubemap_coordinate.x,2) + std::powf(cubemap_coordinate.y, 2) + 1, 1.5f);
+		glm::vec4 lightOutput = glm::vec4(light.energy * 240.0f / (cubemap_size * denominator), 1.0);//rasmus's equation
+		uint32_t x = std::min(uint32_t(cur_uv.u * lightmap.width),  lightmap.width  - 1);
+		uint32_t y = std::min(uint32_t(cur_uv.v * lightmap.height), lightmap.height - 1);
+
+		if(y * lightmap.width + x >= lightmap.width * lightmap.height){
+			std::cout<<"array out of bounds fucker"<<std::endl;
+		}
 		lightmap_colors[y * lightmap.width + x] += lightOutput;
 	}
 	//write to the lightmap texture

@@ -14,6 +14,7 @@ static GLuint gl_compile_shader(GLenum type, std::string const &source) {
 	GLint compile_status = GL_FALSE;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &compile_status);
 	if (compile_status != GL_TRUE) {
+		std::cout<<str<<std::endl;
 		std::cerr << "Failed to compile shader." << std::endl;
 		GLint info_log_length = 0;
 		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &info_log_length);

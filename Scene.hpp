@@ -68,16 +68,16 @@ struct Cubemap{
 	uint32_t width;
 	GLenum target = GL_TEXTURE_2D;
 
-	Cubemap(uint32_t width){
+	Cubemap(uint32_t w){
 		glGenTextures(1, &tex);
 		glBindTexture(GL_TEXTURE_CUBE_MAP, tex);
-		
+		width = w;
 		// Create 6 faces, each storing RG (U,V) as floats
-		for (int face = 0; face < 6; face++) {
+		for (uint32_t face = 0; face < 6; face++) {
 			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 
 						0, GL_RG32F,  // 2 channels, 32-bit float
-						width, width, 0,
-						GL_RG, GL_FLOAT, nullptr);
+						w, w, 0,
+						GL_RGBA, GL_FLOAT, nullptr);
 		}
 		
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -85,7 +85,6 @@ struct Cubemap{
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-		
 		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 	};
 };
@@ -201,9 +200,9 @@ struct Scene {
 	std::list< Light > lights;
 
 	//render scene uv coordinates to cubemap
-	void Scene::renderToCubemap(Cubemap const &cubemap, Scene::Camera const &camera, Light const& light);
+	void renderToCubemap(Cubemap const &cubemap, Scene::Camera const &camera, Light const& light);
 	//inject light using Cubemap, this one should have shadows
-	void Scene::injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &lightmap, Light const &light);
+	void injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &lightmap, Light const &light);
 
 	//inject light into the lightmap texture
 	//takes Lightmap by const-ref to avoid needing a full definition here

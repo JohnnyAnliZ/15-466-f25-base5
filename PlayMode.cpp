@@ -411,8 +411,10 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS); //this is the default depth comparison function, but FYI you can change it.
 
-	//inject direct lighting into lightmap
-	scene.injectDirectLighting(*(lightmap.value));
+	scene.renderToCubemap(*cubemap, *camera, scene.lights.front());
+	//std::cout<<"done rendering to Cubemap"<<std::endl;
+	scene.injectCubemapToLightmap(*cubemap, *lightmap, scene.lights.front());
+	//std::cout<<"done injecting"<<std::endl;
 
 	// Debug: read lightmap via an FBO and glReadPixels (more portable than glGetTexImage)
 	{

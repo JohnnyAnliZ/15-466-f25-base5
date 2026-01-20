@@ -5,6 +5,7 @@
 Load< CubemapProgram > cubemap_program(LoadTagEarly, []() -> CubemapProgram const * {
 	CubemapProgram *ret = new CubemapProgram();
 	cubemap_pipeline.program = ret->program;
+	cubemap_pipeline.CLIP_FROM_OBJECT_mat4 = ret->CLIP_FROM_OBJECT_mat4;
 	return ret;
 });
 
@@ -13,7 +14,7 @@ CubemapProgram::CubemapProgram() {
 	program = gl_compile_program(
 		//vertex shader:
 		"#version 330\n"
-        "uniform mat4x3 CLIP_FROM_OBJECT; "
+        "uniform mat4x4 CLIP_FROM_OBJECT; "
 		"in vec4 Position;\n"
 		"in vec3 Normal;\n"
 		"in vec4 Color;\n"
@@ -38,7 +39,10 @@ CubemapProgram::CubemapProgram() {
 		"in vec2 texCoord;\n"
 		"out vec2 fragColor;\n"
 		"void main() {\n"
-		"	fragColor = texCoord;\n"
+		"if (texCoord.x < 0.0 || texCoord.x > 1.0 ||\n"
+    	"texCoord.y < 0.0 || texCoord.y > 1.0) discard;\n"
+		"if (!gl_FrontFacing)discard;\n"
+		"fragColor = texCoord;\n"
 		"}\n"
 	);
 
@@ -47,6 +51,8 @@ CubemapProgram::CubemapProgram() {
 	Normal_vec3 = glGetAttribLocation(program, "Normal");
 	Color_vec4 = glGetAttribLocation(program, "Color");
 	TexCoord_vec2 = glGetAttribLocation(program, "TexCoord");
+
+	CLIP_FROM_OBJECT_mat4 = glGetUniformLocation(program, "CLIP_FROM_OBJECT");
 
 	glUseProgram(program); //bind program -- glUniform* calls refer to this program now
 	glUseProgram(0); //unbind program -- glUniform* calls refer to ??? now

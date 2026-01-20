@@ -89,7 +89,7 @@ int main(int argc, char **argv) {
 		std::cerr << "Error creating OpenGL context: " << SDL_GetError() << std::endl;
 		return 1;
 	}
-
+	SDL_GL_MakeCurrent(Mode::window, context);
 	//On windows, load OpenGL entrypoints: (does nothing on other platforms)
 	init_GL();
 

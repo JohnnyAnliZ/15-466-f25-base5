@@ -16,7 +16,7 @@ struct CubemapProgram {
 	GLuint Color_vec4 = -1U;
 	GLuint TexCoord_vec2 = -1U;
 
-	GLuint CLIP_FROM_OBJECT_mat4x3 = -1U;
+	GLuint CLIP_FROM_OBJECT_mat4 = -1U;
 };
 
 extern Load< CubemapProgram > cubemap_program;
