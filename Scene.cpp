@@ -204,6 +204,7 @@ void Scene::injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &ligh
 	for(uint32_t i = 0; i < 6; i ++){
 		glGetTexImage(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RG, GL_FLOAT, cubemap_uvs.data() + i * cubemap_face_size);	
 	}
+	
 	GLenum err = glGetError();
 	assert(err == GL_NO_ERROR);
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);

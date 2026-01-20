@@ -41,7 +41,7 @@ CubemapProgram::CubemapProgram() {
 		"void main() {\n"
 		"if (texCoord.x < 0.0 || texCoord.x > 1.0 ||\n"
     	"texCoord.y < 0.0 || texCoord.y > 1.0) discard;\n"
-		"if (!gl_FrontFacing)discard;\n"
+
 		"fragColor = texCoord;\n"
 		"}\n"
 	);
