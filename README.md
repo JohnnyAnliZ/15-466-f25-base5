@@ -20,3 +20,6 @@ Sources: (TODO: list a source URL for any assets you did not create yourself. Ma
 
 This game was built with [NEST](NEST.md).
 
+cd C:\Users\zal17\Documents\Game5\15-466-f25-base5
+
+

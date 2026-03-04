@@ -179,7 +179,7 @@ void Scene::injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &ligh
 	uint32_t cubemap_face_size = cubemap_width * cubemap_width; 
 	uint32_t cubemap_size = cubemap_face_size * 6; 
 	std::vector<UV> cubemap_uvs(cubemap_size, UV{-1.0f,-1.0f});
-	// //declare vector to store lightmap initialized to black
+	//declare vector to store lightmap initialized to black
 	std::vector<glm::vec4> lightmap_colors(lightmap.width * lightmap.height, glm::vec4(0.0f,0.0f,0.0f,1.0f));
 	
 	glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap.tex);

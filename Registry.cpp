@@ -49,7 +49,7 @@ Load<Lightmap> lightmap(LoadTagDefault, []() -> Lightmap const* {
 });
 
 Load<Cubemap> cubemap(LoadTagDefault, []() -> Cubemap const*{
-    return new Cubemap(512);
+    return new Cubemap(128);
 });
 
 

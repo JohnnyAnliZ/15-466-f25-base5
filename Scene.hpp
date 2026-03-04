@@ -51,8 +51,8 @@ struct Lightmap: public Texture {
                      GL_RGB, GL_FLOAT, nullptr);
         
         // Linear filtering (lighting is smooth)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         
@@ -202,7 +202,7 @@ struct Scene {
 	//render scene uv coordinates to cubemap
 	void renderToCubemap(Cubemap const &cubemap, Scene::Camera const &camera, Light const& light);
 	//inject light using Cubemap, this one should have shadows
-	void injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &lightmap, Light const &light);
+	void injectCubemapToLightmap(Cubemap const &cubemap, Lightmap const &  , Light const &light);
 
 	//inject light into the lightmap texture
 	//takes Lightmap by const-ref to avoid needing a full definition here
